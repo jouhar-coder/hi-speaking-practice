@@ -138,7 +138,7 @@ const server = http.createServer(async (req, res) => {
       const rawReply = result.choices?.[0]?.message?.content?.trim();
       if (!rawReply) return json(res, 502, { error: 'The AI returned an empty reply. Please try again.' });
       let parsed;
-      try { parsed = JSON.parse(rawReply.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '')); }
+      try { parsed = JSON.parse(rawReply.replace(/```json|```/gi, '').trim()); }
       catch { parsed = { reply: rawReply, translation: '' }; }
       const reply = typeof parsed.reply === 'string' ? parsed.reply.trim() : '';
       const translation = typeof parsed.translation === 'string' ? parsed.translation.trim() : '';
