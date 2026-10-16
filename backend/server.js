@@ -82,8 +82,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/chat') {
       if (!allowedChatRequest(req)) return json(res, 429, { error: 'Too many messages. Please wait a minute and try again.' });
       if (!process.env.OPENAI_API_KEY) return json(res, 503, { error: 'AI chat is not configured yet. Add OPENAI_API_KEY in the Render environment settings.' });
-      const { languageId, level = 'A1', scenario = 'friendly everyday conversation', messages = [] } = await readJson(req);
+      const { languageId, nativeLanguageId, level = 'A1', scenario = 'friendly everyday conversation', messages = [] } = await readJson(req);
       const language = languages.find(item => item.id === languageId);
+      const nativeLanguage = languages.find(item => item.id === nativeLanguageId);
       if (!language) return json(res, 400, { error: 'Choose a supported conversation language.' });
       if (!Array.isArray(messages) || messages.length < 1 || messages.length > 12) return json(res, 400, { error: 'Send between 1 and 12 recent conversation messages.' });
       const safeMessages = messages.map(message => {
@@ -101,7 +102,7 @@ const server = http.createServer(async (req, res) => {
         'Understand the meaning of what the learner says even if they use another language, then continue the conversation in the target language.',
         'Use natural, everyday language appropriate to the learner level. Keep each response to 1–4 short sentences and finish with one relevant question when it feels natural.',
         'Do not merely translate the learner. Be a conversation partner. Be encouraging, and do not interrupt the conversation with long grammar lectures.',
-        'If the user asks for a correction or explanation, explain briefly in the target language and then continue the conversation.'
+        `If the user explicitly asks for a translation or an explanation, use their preferred language (${nativeLanguage?.name || 'the language they ask for'}) for that explanation, then continue the conversation in ${language.name}.`
       ].join(' ');
       const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
