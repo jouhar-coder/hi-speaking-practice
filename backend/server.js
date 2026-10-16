@@ -77,11 +77,16 @@ function allowedChatRequest(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { status: 'ok', languages: languages.length, aiConfigured: Boolean(process.env.OPENAI_API_KEY) });
+    if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { status: 'ok', languages: languages.length, aiConfigured: Boolean(process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY) });
     if (req.method === 'GET' && url.pathname === '/api/languages') return json(res, 200, { languages });
     if (req.method === 'POST' && url.pathname === '/api/chat') {
       if (!allowedChatRequest(req)) return json(res, 429, { error: 'Too many messages. Please wait a minute and try again.' });
-      if (!process.env.OPENAI_API_KEY) return json(res, 503, { error: 'AI chat is not configured yet. Add OPENAI_API_KEY in the Render environment settings.' });
+      const groqKey = process.env.GROQ_API_KEY;
+      const openaiKey = process.env.OPENAI_API_KEY;
+      if (!groqKey && !openaiKey) return json(res, 503, { error: 'AI chat is not configured yet. Add GROQ_API_KEY (free-tier option) or OPENAI_API_KEY in the Render environment settings.' });
+      const providerUrl = groqKey ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+      const providerKey = groqKey || openaiKey;
+      const defaultModel = groqKey ? 'openai/gpt-oss-120b' : 'gpt-5.5';
       const { languageId, nativeLanguageId, level = 'A1', scenario = 'friendly everyday conversation', messages = [] } = await readJson(req);
       const language = languages.find(item => item.id === languageId);
       const nativeLanguage = languages.find(item => item.id === nativeLanguageId);
@@ -104,11 +109,11 @@ const server = http.createServer(async (req, res) => {
         'Do not merely translate the learner. Be a conversation partner. Be encouraging, and do not interrupt the conversation with long grammar lectures.',
         `If the user explicitly asks for a translation or an explanation, use their preferred language (${nativeLanguage?.name || 'the language they ask for'}) for that explanation, then continue the conversation in ${language.name}.`
       ].join(' ');
-      const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
+      const upstream = await fetch(providerUrl, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${providerKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || 'gpt-5.5',
+          model: process.env.AI_MODEL || (groqKey ? defaultModel : (process.env.OPENAI_MODEL || defaultModel)),
           messages: [{ role: 'system', content: systemPrompt }, ...safeMessages],
           max_completion_tokens: 220
         }),
@@ -116,8 +121,9 @@ const server = http.createServer(async (req, res) => {
       });
       const result = await upstream.json().catch(() => ({}));
       if (!upstream.ok) {
-        console.error('AI provider returned status', upstream.status);
-        return json(res, 502, { error: upstream.status === 429 ? 'The AI service is busy. Please try again shortly.' : 'The AI service could not complete this reply. Check the server API configuration.' });
+        const providerError = result.error?.message || result.message || 'no details returned';
+        console.error(`AI provider (${groqKey ? 'Groq' : 'OpenAI'}) returned status ${upstream.status}: ${providerError}`);
+        return json(res, 502, { error: upstream.status === 429 ? 'The AI provider rate limit or free-tier quota was reached. Please wait and try again.' : 'The AI service could not complete this reply. Check the provider key and model configuration.' });
       }
       const reply = result.choices?.[0]?.message?.content?.trim();
       if (!reply) return json(res, 502, { error: 'The AI returned an empty reply. Please try again.' });

@@ -20,10 +20,14 @@ Then visit `http://localhost:3000`.
 
 ## Configure AI replies
 
-Set these environment variables on Render (or in your local shell):
+Set one provider key on Render (or in your local shell):
 
-- `OPENAI_API_KEY` — required secret API key
-- `OPENAI_MODEL` — optional model name available to your API project; defaults to `gpt-5.5`
+- `GROQ_API_KEY` — recommended option to try Groq's available free developer tier; when present, the backend uses `https://api.groq.com/openai/v1/chat/completions` and defaults to `openai/gpt-oss-120b`.
+- `OPENAI_API_KEY` — optional alternative if you use OpenAI API billing. Groq is preferred automatically when both keys are present.
+- `AI_MODEL` — optional override for the model when using Groq or OpenAI.
+- `OPENAI_MODEL` — legacy OpenAI-only model override when `AI_MODEL` is not set.
+
+Free-tier access, model availability, and rate limits depend on the provider account and can change. A `429` can mean the provider's rate limit or quota has been reached; wait or check the provider dashboard.
 
 Never put the API key in frontend JavaScript, Flutter source, or GitHub. The `/api/chat` route has basic in-memory rate limiting and request-size limits, but these are not a substitute for production-grade shared rate limiting, authentication, monitoring, and abuse controls.
 
