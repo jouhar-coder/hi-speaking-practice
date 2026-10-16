@@ -34,3 +34,14 @@ Never put the API key in frontend JavaScript, Flutter source, or GitHub. The `/a
 ## MVP limitations
 
 Users and session tokens are stored in memory, so restarts clear them. Conversation history is sent by the client and is not persisted by the server. Before public scale, move accounts and learning progress to Postgres (for example, Neon or Supabase), use secure sessions, and add shared rate limiting.
+
+
+## Learner translations and theme
+
+AI replies are returned with a target-language `reply` and an English `translation`. The practice page displays the English meaning below the AI response and provides a light/dark theme toggle saved in the browser.
+
+## Login activity and admin reporting
+
+Successful registration and login update `createdAt`, `lastLoginAt`, and `loginCount`. `GET /api/me` returns these basic fields for the currently authenticated user. An owner-only `GET /api/admin/users` endpoint returns the account list and basic login activity; set a long random `ADMIN_API_KEY` environment variable in Render and send it in the `x-admin-key` header. Never put this admin key in frontend code. The report does not include password hashes, passwords, session tokens, IP addresses, or conversation transcripts.
+
+Sessions expire after seven days and basic security headers are set. Important limitation: users, sessions, and login counts are still stored in memory and are cleared on restart/redeploy. For durable production use, move accounts and login events to a database and use shared rate limiting. This is an MVP hardening step, not a substitute for a production identity system.

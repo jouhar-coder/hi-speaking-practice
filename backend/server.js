@@ -7,7 +7,7 @@ const path = require('node:path');
 const port = Number(process.env.PORT || 3000);
 const previewDir = path.resolve(__dirname, '..', 'preview');
 const users = new Map(); // email -> { id, name, email, passwordHash, createdAt }
-const sessions = new Map(); // token -> userId
+const sessions = new Map(); // token -> { userId, expiresAt }
 const chatRate = new Map(); // IP -> { count, resetAt }; use a shared limiter in production
 const languages = [
   { id: 'en', name: 'English', flag: '🇬🇧', locale: 'en-US', levels: ['A1', 'A2', 'B1', 'B2', 'C1'] },
@@ -46,12 +46,19 @@ function comparePassword(password, stored) {
   const check = crypto.scryptSync(password, salt, 64).toString('hex');
   return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(check, 'hex'));
 }
-function publicUser(user) { return { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt }; }
-function createSession(user) { const token = crypto.randomBytes(32).toString('hex'); sessions.set(token, user.id); return token; }
+function publicUser(user) { return { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt, lastLoginAt: user.lastLoginAt || null, loginCount: user.loginCount || 0 }; }
+function createSession(user) { const token = crypto.randomBytes(32).toString('hex'); sessions.set(token, { userId: user.id, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 }); return token; }
 function authorize(req) {
-  const token = (req.headers.authorization || '').replace('Bearer ', '');
-  const id = sessions.get(token);
-  return [...users.values()].find(user => user.id === id);
+  const token = (req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
+  const session = sessions.get(token);
+  if (!session) return undefined;
+  if (session.expiresAt <= Date.now()) { sessions.delete(token); return undefined; }
+  return [...users.values()].find(user => user.id === session.userId);
+}
+function constantTimeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const left = Buffer.from(a); const right = Buffer.from(b);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 function contentType(file) { return ({'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon'})[path.extname(file)] || 'application/octet-stream'; }
 function serveStatic(url, res) {
@@ -76,6 +83,9 @@ function allowedChatRequest(req) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'DENY');
   try {
     if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { status: 'ok', languages: languages.length, aiConfigured: Boolean(process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY) });
     if (req.method === 'GET' && url.pathname === '/api/languages') return json(res, 200, { languages });
@@ -107,7 +117,7 @@ const server = http.createServer(async (req, res) => {
         'Understand the meaning of what the learner says even if they use another language, then continue the conversation in the target language.',
         'Use natural, everyday language appropriate to the learner level. Keep each response to 1–4 short sentences and finish with one relevant question when it feels natural.',
         'Do not merely translate the learner. Be a conversation partner. Be encouraging, and do not interrupt the conversation with long grammar lectures.',
-        `If the user explicitly asks for a translation or an explanation, use their preferred language (${nativeLanguage?.name || 'the language they ask for'}) for that explanation, then continue the conversation in ${language.name}.`
+        'Return ONLY a valid JSON object with exactly two string fields: reply and translation. The reply field must contain your natural conversational response in the target language. The translation field must contain an accurate, natural English translation of that reply. Keep both concise and appropriate to the learner level. Do not include markdown fences or text outside the JSON object.'
       ].join(' ');
       const upstream = await fetch(providerUrl, {
         method: 'POST',
@@ -115,7 +125,7 @@ const server = http.createServer(async (req, res) => {
         body: JSON.stringify({
           model: process.env.AI_MODEL || (groqKey ? defaultModel : (process.env.OPENAI_MODEL || defaultModel)),
           messages: [{ role: 'system', content: systemPrompt }, ...safeMessages],
-          max_completion_tokens: 220
+          max_completion_tokens: 420
         }),
         signal: AbortSignal.timeout(25_000)
       });
@@ -125,16 +135,22 @@ const server = http.createServer(async (req, res) => {
         console.error(`AI provider (${groqKey ? 'Groq' : 'OpenAI'}) returned status ${upstream.status}: ${providerError}`);
         return json(res, 502, { error: upstream.status === 429 ? 'The AI provider rate limit or free-tier quota was reached. Please wait and try again.' : 'The AI service could not complete this reply. Check the provider key and model configuration.' });
       }
-      const reply = result.choices?.[0]?.message?.content?.trim();
-      if (!reply) return json(res, 502, { error: 'The AI returned an empty reply. Please try again.' });
-      return json(res, 200, { reply, language: language.name });
+      const rawReply = result.choices?.[0]?.message?.content?.trim();
+      if (!rawReply) return json(res, 502, { error: 'The AI returned an empty reply. Please try again.' });
+      let parsed;
+      try { parsed = JSON.parse(rawReply.replace(/```json|```/gi, '').trim()); }
+      catch { parsed = { reply: rawReply, translation: '' }; }
+      const reply = typeof parsed.reply === 'string' ? parsed.reply.trim() : '';
+      const translation = typeof parsed.translation === 'string' ? parsed.translation.trim() : '';
+      if (!reply) return json(res, 502, { error: 'The AI returned an unreadable reply. Please try again.' });
+      return json(res, 200, { reply, translation, language: language.name });
     }
     if (req.method === 'POST' && url.pathname === '/api/auth/register') {
       const { name, email, password } = await readJson(req);
       if (!name?.trim() || !email?.includes('@') || !password || password.length < 8) return json(res, 400, { error: 'Name, a valid email, and an 8-character password are required.' });
       const key = email.trim().toLowerCase();
       if (users.has(key)) return json(res, 409, { error: 'An account already exists for that email.' });
-      const user = { id: crypto.randomUUID(), name: name.trim(), email: key, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
+      const user = { id: crypto.randomUUID(), name: name.trim(), email: key, passwordHash: hashPassword(password), createdAt: new Date().toISOString(), lastLoginAt: new Date().toISOString(), loginCount: 1 };
       users.set(key, user);
       return json(res, 201, { token: createSession(user), user: publicUser(user) });
     }
@@ -142,7 +158,16 @@ const server = http.createServer(async (req, res) => {
       const { email, password } = await readJson(req);
       const user = users.get(email?.trim().toLowerCase());
       if (!user || !password || !comparePassword(password, user.passwordHash)) return json(res, 401, { error: 'Email or password is incorrect.' });
+      user.lastLoginAt = new Date().toISOString();
+      user.loginCount = (user.loginCount || 0) + 1;
       return json(res, 200, { token: createSession(user), user: publicUser(user) });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/admin/users') {
+      const adminKey = process.env.ADMIN_API_KEY;
+      if (!adminKey) return json(res, 503, { error: 'Admin user reporting is not configured.' });
+      if (!constantTimeEqual(req.headers['x-admin-key'], adminKey)) return json(res, 401, { error: 'Admin authorization required.' });
+      const report = [...users.values()].map(user => ({ id: user.id, name: user.name, email: user.email, createdAt: user.createdAt, lastLoginAt: user.lastLoginAt || null, loginCount: user.loginCount || 0 }));
+      return json(res, 200, { count: report.length, users: report });
     }
     if (req.method === 'GET' && url.pathname === '/api/me') {
       const user = authorize(req);

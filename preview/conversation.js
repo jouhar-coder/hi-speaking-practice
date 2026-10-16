@@ -7,6 +7,14 @@ const language = document.getElementById('language');
 const transcript = document.getElementById('transcript');
 const empty = document.getElementById('empty');
 const levelSelect = document.getElementById('level');
+const themeToggle = document.getElementById('themeToggle');
+if (localStorage.getItem('hi-theme') === 'dark') document.body.classList.add('dark');
+themeToggle?.addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+  localStorage.setItem('hi-theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+  themeToggle.textContent = document.body.classList.contains('dark') ? '☀ Light' : '☾ Theme';
+});
+if (themeToggle) themeToggle.textContent = document.body.classList.contains('dark') ? '☀ Light' : '☾ Theme';
 let recognition;
 let listening = false;
 let waitingForReply = false;
@@ -17,7 +25,7 @@ const languageIds = {
   'ar-SA': 'ar', 'ml-IN': 'ml'
 };
 
-function add(text, you = false) {
+function add(text, you = false, translation = '') {
   empty?.remove();
   const bubble = document.createElement('div');
   bubble.className = `bubble${you ? ' you' : ''}`;
@@ -25,6 +33,12 @@ function add(text, you = false) {
   const meta = document.createElement('small');
   meta.textContent = `${you ? 'You' : 'hi coach'} · just now`;
   bubble.append(meta);
+  if (!you && translation) {
+    const translated = document.createElement('div');
+    translated.className = 'translation';
+    translated.append(document.createTextNode('🇬🇧 Meaning: ' + translation));
+    bubble.append(translated);
+  }
   chat.append(bubble);
   chat.scrollTop = chat.scrollHeight;
 }
@@ -70,7 +84,7 @@ async function replyTo(text) {
     if (!answer) throw new Error('The AI returned an empty reply. Please try again.');
     history.push({ role: 'assistant', content: answer });
     if (history.length > 12) history.splice(0, history.length - 12);
-    add(answer);
+    add(answer, false, data.translation || '');
     speak(answer);
     statusText.textContent = `AI replied in ${data.language || language.options[language.selectedIndex].text.replace(/^..\\s/, '')}. Tap the microphone to continue.`;
     stateText.textContent = '● ready to listen';
