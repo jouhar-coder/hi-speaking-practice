@@ -53,7 +53,7 @@ async function lookupOnline(){
   let section=[];
   if(heading>=0){for(let i=heading+1;i<lines.length;i++){if(languageNames.some(n=>lines[i].toLowerCase()===n.toLowerCase()))break;section.push(lines[i]);}}
   const source=heading>=0?section:lines;
-  const cleaned=source.filter(line=>!noise.test(line)&&!/^\\(?((ipa|audio|key|rhymes|homophones|hyphenation|audio pronunciation))\\b/i.test(line)&&line.length<180)
+  const cleaned=source.filter(line=>!noise.test(line)&&!/^(IPA|audio|key|rhymes|homophones|hyphenation|audio pronunciation)\\b/i.test(line)&&line.length<180)
     .filter(line=>!/^\\[?edit\\]?$/i.test(line))
     .slice(0,12);
   const found=heading>=0&&cleaned.length>0;
