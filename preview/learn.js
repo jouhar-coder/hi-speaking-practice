@@ -11,11 +11,36 @@ ko:{name:'Korean',w:[['안녕하세요','hello'],['감사합니다','thank you']
 ar:{name:'Arabic',w:[['مرحبا','hello'],['شكرا','thank you'],['بيت','house / home'],['صديق / صديقة','friend'],['ماء','water'],['كتاب','book'],['اليوم','today'],['سعيد / سعيدة','happy'],['أكل','to eat'],['تحدث','to speak']],v:[['كان / يكون','to be','forms vary by tense and context'],['ذهب','to go','أذهب = I go'],['فعل','to do','أفعل = I do']],p:[['كيف حالك؟','How are you?'],['لا أفهم.','I do not understand.'],['هل يمكنك الإعادة من فضلك؟','Could you repeat, please?'],['أين المحطة؟','Where is the station?']],s:['تعيش مايا في بيت صغير. كل صباح تشرب الشاي وتقرأ كتابًا. اليوم تذهب إلى الحديقة مع صديقها.','Maya lives in a small house. Every morning, she drinks tea and reads a book. Today, she goes to the park with her friend.']}
 };
 const $=id=>document.getElementById(id);let tab='words';const key='hi-learning-saved';const getSaved=()=>{try{return JSON.parse(localStorage.getItem(key)||'[]')}catch{return[]}};function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function speak(t){if(!('speechSynthesis'in window))return;const loc={fr:'fr-FR',es:'es-ES',de:'de-DE',it:'it-IT',en:'en-US',ml:'ml-IN',hi:'hi-IN',ja:'ja-JP',ko:'ko-KR',ar:'ar-SA'};const u=new SpeechSynthesisUtterance(t);u.lang=loc[$('language').value];u.rate=.82;speechSynthesis.cancel();speechSynthesis.speak(u)}function save(item){const all=getSaved(),k=$('language').value+'|'+item[0],i=all.findIndex(x=>x.k===k);if(i>=0)all.splice(i,1);else all.push({k,lang:$('language').value,item});localStorage.setItem(key,JSON.stringify(all));render()}function render(){const d=D[$('language').value],q=$('search').value.toLowerCase().trim();document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));if(tab==='stories'){$('content').innerHTML='<h2>Short story · '+esc(d.name)+'</h2><p class="sub">Beginner reading · Read aloud and compare the meaning</p><div class="story" lang="'+$('language').value+'">'+esc(d.s[0])+'</div><p class="meaning-story"><b>English meaning</b><br>'+esc(d.s[1])+'</p><button class="btn" id="listenStory">🔊 Listen to story</button>'; $('listenStory').onclick=()=>speak(d.s[0]);return}let items=tab==='words'?d.w:tab==='verbs'?d.v:tab==='phrases'?d.p:getSaved().filter(x=>x.lang===$('language').value).map(x=>x.item);items=items.filter(x=>x.join(' ').toLowerCase().includes(q));const title={words:'Everyday vocabulary',verbs:'Useful verbs',phrases:'Useful everyday phrases',saved:'Saved words and phrases'};$('content').innerHTML='<h2>'+title[tab]+'</h2><p class="sub">'+esc(d.name)+' · '+items.length+' items · English meanings included</p><div class="cards">'+(items.length?items.map(x=>'<article class="card"><div class="word">'+esc(x[0])+'</div><div class="meaning">'+esc(x[1])+'</div>'+(x[2]?'<div class="meta">'+esc(x[2])+'</div>':'')+'<div class="actions"><button class="btn" data-speak="'+encodeURIComponent(x[0])+'">🔊 Listen</button><button class="btn" data-save="'+encodeURIComponent(JSON.stringify(x))+'">'+(getSaved().some(y=>y.k===$('language').value+'|'+x[0])?'★ Saved':'☆ Save')+'</button></div></article>').join(''):'<div class="empty">No matching items. Try another search.</div>')+'</div>'}document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});$('language').onchange=render;$('search').oninput=render;$('content').onclick=e=>{const s=e.target.closest('[data-speak]'),v=e.target.closest('[data-save]');if(s)speak(decodeURIComponent(s.dataset.speak));if(v){try{save(JSON.parse(decodeURIComponent(v.dataset.save)))}catch{}}};render();
+// Small verified starter set for clean, learner-friendly dictionary cards.
+// Expand this dataset gradually; Wiktionary remains the fallback for other words.
+const CLEAN_DICTIONARY={
+ fr:{
+  bonjour:{meaning:'Hello · Good morning · Good day',part:'Greeting / interjection',example:'Bonjour, comment allez-vous ?',translation:'Hello, how are you?',related:[['bonsoir','good evening'],['salut','hi / hello'],['bonne nuit','good night']]},
+  comment:{meaning:'How · In what way',part:'Interrogative adverb',example:'Comment allez-vous ?',translation:'How are you?',related:[['comment ça va ?','how are you?'],['pourquoi','why'],['quand','when']]},
+  maison:{meaning:'House · Home',part:'Noun (feminine: une maison)',example:'J’habite dans une petite maison.',translation:'I live in a small house.',related:[['chez moi','at my home'],['appartement','apartment'],['foyer','home / household']]}
+ }
+};
+function renderCleanDictionary(word,code,lang,box,wiki){
+ const entry=CLEAN_DICTIONARY[code]?.[word.trim().toLocaleLowerCase()];
+ if(!entry)return false;
+ const related=entry.related.map(x=>'<li><b>'+esc(x[0])+'</b> — '+esc(x[1])+'</li>').join('');
+ box.innerHTML='<h2>'+esc(word)+'</h2><p class="sub">Dictionary · '+esc(lang)+' → English</p><section class="card"><div class="meta">ENGLISH MEANING</div><div class="word">'+esc(entry.meaning)+'</div><div class="meta">PART OF SPEECH</div><p>'+esc(entry.part)+'</p><div class="meta">EXAMPLE SENTENCE</div><p style="font-size:19px">'+esc(entry.example)+'</p><div class="meaning">'+esc(entry.translation)+'</div><div class="actions"><button class="btn" id="speakLookup" type="button">🔊 Hear word</button><button class="btn" id="saveLookup" type="button">☆ Save to My Vocabulary</button><a class="btn" style="text-decoration:none" href="'+wiki+'" target="_blank" rel="noopener noreferrer">Full entry ↗</a></div></section><h3>Related words and phrases</h3><ul>'+related+'</ul><p class="sub">Curated starter entry. More words and languages will be added over time.</p>';
+ box.querySelector('#speakLookup').onclick=()=>speak(word);
+ box.querySelector('#saveLookup').onclick=()=>{
+  const all=getSaved(),k=code+'|'+word,i=all.findIndex(x=>x.k===k);
+  if(i>=0){box.querySelector('#saveLookup').textContent='★ Already saved';return}
+  all.push({k,lang:code,item:[word,entry.meaning,entry.example+' — '+entry.translation]});
+  localStorage.setItem(key,JSON.stringify(all));
+  box.querySelector('#saveLookup').textContent='★ Saved to My Vocabulary';
+ };
+ return true;
+}
 async function lookupOnline(){
  const word=$('lookupWord').value.trim(),box=$('lookupResult'),code=$('language').value,lang=D[code].name;
  if(!word){box.style.display='block';box.innerHTML='<h2>Enter a word</h2><p class="sub">Type a word in the selected language to look it up.</p>';return}
  box.style.display='block';box.innerHTML='<h2>Searching dictionary…</h2><p class="sub">Looking for “'+esc(word)+'” in the '+esc(lang)+' section.</p>';
  const wiki='https://en.wiktionary.org/wiki/'+encodeURIComponent(word);
+ if(renderCleanDictionary(word,code,lang,box,wiki))return;
  const languageNames=['English','French','Spanish','German','Italian','Malayalam','Hindi','Japanese','Korean','Arabic'];
  const noise=/^(pronunciation|etymology|derived terms|related terms|descendants|translations|references|further reading|anagrams|see also|synonyms|antonyms|usage notes|quotations|coordinate terms|hypernyms|hyponyms)(\\s|$)/i;
  try{
