@@ -28,8 +28,16 @@ async function lookupOnline(){
   if(heading>=0){for(let i=heading+1;i<lines.length;i++){if(languageNames.some(n=>lines[i].toLowerCase()===n.toLowerCase()))break;section.push(lines[i]);}}
   const shown=(section.length?section:lines).slice(0,18);
   const note=heading>=0?'Showing text from the '+lang+' section.':'A separate '+lang+' section was not detected, so the general entry is shown. Check the language heading before using a definition.';
-  box.innerHTML='<h2>'+esc(page.title||word)+'</h2><p class="sub">Wiktionary lookup · selected language: '+esc(lang)+'</p><p style="line-height:1.75;white-space:pre-line">'+esc(shown.join('\n'))+'</p><div class="actions"><button class="btn" id="speakLookup" type="button">🔊 Hear word</button><a class="btn" style="text-decoration:none" href="'+wiki+'" target="_blank" rel="noopener noreferrer">Open full entry ↗</a></div><p class="sub" style="margin-top:14px">'+esc(note)+' Wiktionary content may contain multiple meanings and grammatical forms.</p>';
+  box.innerHTML='<h2>'+esc(page.title||word)+'</h2><p class="sub">Wiktionary lookup · selected language: '+esc(lang)+'</p><p style="line-height:1.75;white-space:pre-line">'+esc(shown.join('\n'))+'</p><div class="actions"><button class="btn" id="speakLookup" type="button">🔊 Hear word</button><button class="btn" id="saveLookup" type="button">☆ Save to My Vocabulary</button><a class="btn" style="text-decoration:none" href="'+wiki+'" target="_blank" rel="noopener noreferrer">Open full entry ↗</a></div><p class="sub" style="margin-top:14px">'+esc(note)+' Wiktionary content may contain multiple meanings and grammatical forms.</p>';
   $('speakLookup').onclick=()=>speak(word);
+  $('saveLookup').onclick=()=>{
+   const all=getSaved(),k=code+'|'+word,i=all.findIndex(x=>x.k===k);
+   if(i>=0){box.querySelector('#saveLookup').textContent='★ Already saved';return}
+   const snippet=shown.join(' ').slice(0,220);
+   all.push({k,lang:code,item:[word,'Online dictionary entry · '+lang,snippet]});
+   localStorage.setItem(key,JSON.stringify(all));
+   box.querySelector('#saveLookup').textContent='★ Saved to My Vocabulary';
+  };
  }catch(err){box.innerHTML='<h2>Could not load dictionary</h2><p class="sub">Check your internet connection and try again.</p><a href="'+wiki+'" target="_blank" rel="noopener noreferrer">Open Wiktionary ↗</a>'}
 }
 $('lookupButton').addEventListener('click',lookupOnline);$('lookupWord').addEventListener('keydown',e=>{if(e.key==='Enter')lookupOnline()});
