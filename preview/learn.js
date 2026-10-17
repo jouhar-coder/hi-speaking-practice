@@ -17,24 +17,30 @@ async function lookupOnline(){
  box.style.display='block';box.innerHTML='<h2>Searching dictionary…</h2><p class="sub">Looking for “'+esc(word)+'” in the '+esc(lang)+' section.</p>';
  const wiki='https://en.wiktionary.org/wiki/'+encodeURIComponent(word);
  const languageNames=['English','French','Spanish','German','Italian','Malayalam','Hindi','Japanese','Korean','Arabic'];
+ const noise=/^(pronunciation|etymology|derived terms|related terms|descendants|translations|references|further reading|anagrams|see also|synonyms|antonyms|usage notes|quotations|coordinate terms|hypernyms|hyponyms)(\\s|$)/i;
  try{
   const url='https://en.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&exsectionformat=plain&titles='+encodeURIComponent(word)+'&redirects=1&format=json&origin=*';
   const res=await fetch(url);if(!res.ok)throw new Error('Dictionary request failed');
   const data=await res.json(),pages=Object.values(data.query?.pages||{}),page=pages.find(p=>p.extract);
-  if(!page||!page.extract){box.innerHTML='<h2>No entry found</h2><p class="sub">Try another spelling, or search Wiktionary directly.</p><a href="'+wiki+'" target="_blank" rel="noopener noreferrer">Search Wiktionary ↗</a>';return}
-  const lines=page.extract.split('\n').map(x=>x.trim()).filter(Boolean);
+  if(!page||!page.extract){box.innerHTML='<h2>No entry found</h2><p class="sub">No dictionary entry was found for this spelling. Try another spelling or open Wiktionary directly.</p><a href="'+wiki+'" target="_blank" rel="noopener noreferrer">Search Wiktionary ↗</a>';return}
+  const lines=page.extract.split('\\n').map(x=>x.trim()).filter(Boolean);
   const heading=lines.findIndex(x=>x.toLowerCase()===lang.toLowerCase());
   let section=[];
   if(heading>=0){for(let i=heading+1;i<lines.length;i++){if(languageNames.some(n=>lines[i].toLowerCase()===n.toLowerCase()))break;section.push(lines[i]);}}
-  const shown=(section.length?section:lines).slice(0,18);
-  const note=heading>=0?'Showing text from the '+lang+' section.':'A separate '+lang+' section was not detected, so the general entry is shown. Check the language heading before using a definition.';
-  box.innerHTML='<h2>'+esc(page.title||word)+'</h2><p class="sub">Wiktionary lookup · selected language: '+esc(lang)+'</p><p style="line-height:1.75;white-space:pre-line">'+esc(shown.join('\n'))+'</p><div class="actions"><button class="btn" id="speakLookup" type="button">🔊 Hear word</button><button class="btn" id="saveLookup" type="button">☆ Save to My Vocabulary</button><a class="btn" style="text-decoration:none" href="'+wiki+'" target="_blank" rel="noopener noreferrer">Open full entry ↗</a></div><p class="sub" style="margin-top:14px">'+esc(note)+' Wiktionary content may contain multiple meanings and grammatical forms.</p>';
+  const source=heading>=0?section:lines;
+  const cleaned=source.filter(line=>!noise.test(line)&&!/^\\(?((ipa|audio|key|rhymes|homophones|hyphenation|audio pronunciation))\\b/i.test(line)&&line.length<180)
+    .filter(line=>!/^\\[?edit\\]?$/i.test(line))
+    .slice(0,12);
+  const found=heading>=0&&cleaned.length>0;
+  const note=found?'Showing a cleaned extract from the '+lang+' section. Review the full entry for context.':'A reliable separate '+lang+' section could not be identified. The result below may contain other languages; check the language headings before relying on it.';
+  const display=cleaned.length?cleaned:['The entry did not contain a clean definition extract. Open the full Wiktionary entry for the original article.'];
+  box.innerHTML='<h2>'+esc(page.title||word)+'</h2><p class="sub">Wiktionary dictionary lookup · selected language: '+esc(lang)+'</p><div style="line-height:1.75">'+display.map(line=>'<p style="margin:8px 0">'+esc(line)+'</p>').join('')+'</div><div class="actions"><button class="btn" id="speakLookup" type="button">🔊 Hear word</button><button class="btn" id="saveLookup" type="button">☆ Save to My Vocabulary</button><a class="btn" style="text-decoration:none" href="'+wiki+'" target="_blank" rel="noopener noreferrer">Open full entry ↗</a></div><p class="sub" style="margin-top:14px">'+esc(note)+' Wiktionary is an open dictionary article, not a guaranteed English-translation API.</p>';
   $('speakLookup').onclick=()=>speak(word);
   $('saveLookup').onclick=()=>{
    const all=getSaved(),k=code+'|'+word,i=all.findIndex(x=>x.k===k);
    if(i>=0){box.querySelector('#saveLookup').textContent='★ Already saved';return}
-   const snippet=shown.join(' ').slice(0,220);
-   all.push({k,lang:code,item:[word,'Online dictionary entry · '+lang,snippet]});
+   const snippet=display.join(' ').slice(0,220);
+   all.push({k,lang:code,item:[word,'Wiktionary extract · '+lang,snippet]});
    localStorage.setItem(key,JSON.stringify(all));
    box.querySelector('#saveLookup').textContent='★ Saved to My Vocabulary';
   };
